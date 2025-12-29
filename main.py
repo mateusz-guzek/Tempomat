@@ -189,7 +189,7 @@ def calculate_figure():
     global front_area, vehicle_mass, drag_coefficient
     global gravity, accuracy
 
-    # zaczyna od poczatkowej predkosci
+    # zaczyna od poczatkowej predkosci i biegu 1 (indeksowane od 0)
     current_velocity = start_velocity
     current_gear = 0
 
@@ -207,8 +207,8 @@ def calculate_figure():
 
     gear_shifts = []
 
+    # obliczanie startowego biegu dla danej predkosci poczatkowej
     best_start_gear = 0
-
     if current_velocity > 0:
         for gear_index in range(len(gear_ratios) - 1, -1, -1):
             rpm = calculate_rpm(current_velocity, gear_index)
@@ -220,6 +220,7 @@ def calculate_figure():
     current_gear = best_start_gear
 
     for i in range(1, simulation_steps + 1):
+        # obliczanie siły oporów [N]
         resistances = calculate_drag(
             current_velocity,
             rolling_resistance_coefficient,
@@ -233,6 +234,7 @@ def calculate_figure():
 
         current_error = target_velocity - current_velocity
 
+        # obliczanie otwarcia przepustnicy regulatorem PID
         throttle = calculate_signal(
             current_error,
             previous_error,
@@ -241,12 +243,14 @@ def calculate_figure():
         )
         throttle = clip(throttle, 0.0, 1.0)
 
+        # obliczanie siły silnika i obrotów
         engine_f, engine_rpm = engine_force(
             current_velocity,
             current_gear,
             throttle,
         )
 
+        # zmiana biegu (może być zmiana na ten sam)
         old_gear = current_gear
         current_gear = shift_gear(engine_rpm, current_gear)
         if old_gear != current_gear:
@@ -258,21 +262,23 @@ def calculate_figure():
                 )
             )
 
+        # obliczanie przyspieszenia (F = ma)
         acceleration = (engine_f - resistances) / vehicle_mass
-        # acceleration = clip(acceleration, -inf, max_acceleration)
-
         current_velocity += acceleration * accuracy
         current_velocity = clip(current_velocity, 0, inf)
 
         previous_error = current_error
 
+        # anti windup
         if throttle < 1.0:
+            # całkowanie błędu
             error_accumulator += current_error * accuracy
 
         velocity_history.append(current_velocity)
         time_history.append(i * accuracy)
         rpm_history.append(engine_rpm)
 
+    # przeliczanie m/s na km/h do pokazania na wykresie
     velocity_history = [v * 3.6 for v in velocity_history]
 
     return time_history, velocity_history, gear_shifts, rpm_history
@@ -282,13 +288,13 @@ def calculate_signal(
     error: float,
     previous_error: float,
     accumulated_error: float,
-    probing: float,
+    accuracy: float,
 ) -> float:
     global K_p, K_i, K_d
 
     P = K_p * error
     I = K_i * accumulated_error
-    D = K_d / probing * (error - previous_error)
+    D = K_d / accuracy * (error - previous_error)
 
     return P + I + D
 
@@ -392,7 +398,7 @@ app.layout = html.Div(
                             marks={0: "0", 0.025: "0.025", 0.05: "0.05"},
                         ),
                         html.Label("Nachylenie drogi pod górkę"),
-                        dcc.Slider(id="road slope", min=0, max=45, step=0.1, value=0),
+                        dcc.Slider(id="road_slope", min=0, max=45, step=0.1, value=0),
                     ],
                     style={"width": "48%", "marginBottom": "20px"},
                 ),
